@@ -2,8 +2,6 @@ run:
   type: docker
 env:
 - AWS_REGION
-- AWS_ACCESS_KEY_ID
-- AWS_SECRET_ACCESS_KEY
 - GEARMAN_ADMIN_USER
 - GEARMAN_ADMIN_PASS
 - GEARMAN_ADMIN_PATH
@@ -22,3 +20,16 @@ team: eng-ip
 resources:
   cpu: 0.05
   max_mem: 0.05
+aws:
+  custom: true
+  managed:
+    clever:
+    - Workflows
+  s3:
+    read:
+      - long-term-metrics 
+autoscaling:
+  metric: cpu
+  metric_target: 50
+  min_count: 2
+  max_count: 4

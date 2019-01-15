@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/Clever/configure"
+  packages = ["."]
+  revision = "e62cf1715b47d2ea5f09b5c8f04facecfdedcaf2"
+  version = "1.0.0"
+
+[[projects]]
   name = "github.com/Clever/discovery-go"
   packages = ["."]
   revision = "12684ef3012bf55b9827a6e7c96503e37b0d8379"
@@ -17,25 +23,48 @@
   revision = "84d549efdf0e2928c2be08bdcc3a1b0cf8ef2f45"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/Clever/s3-to-redshift"
-  packages = ["logger","redshift","s3filepath"]
-  revision = "dbd2352ea8cc0475584a8ff7544566c14bed73b5"
-
-[[projects]]
   name = "github.com/DATA-DOG/go-sqlmock"
   packages = ["."]
   revision = "081a694b0af16f86d406ac2832433a98a6fa625a"
 
 [[projects]]
   name = "github.com/aws/aws-sdk-go"
-  packages = ["aws","aws/awserr","aws/awsutil","aws/client","aws/client/metadata","aws/corehandlers","aws/credentials","aws/credentials/ec2rolecreds","aws/credentials/endpointcreds","aws/credentials/stscreds","aws/defaults","aws/ec2metadata","aws/endpoints","aws/request","aws/session","aws/signer/v4","private/protocol","private/protocol/query","private/protocol/query/queryutil","private/protocol/rest","private/protocol/restxml","private/protocol/xml/xmlutil","service/s3","service/sts"]
-  revision = "2c0ef11c03b8f28d694021d4a6bda2e24b040cd4"
+  packages = [
+    "aws",
+    "aws/awserr",
+    "aws/awsutil",
+    "aws/client",
+    "aws/client/metadata",
+    "aws/corehandlers",
+    "aws/credentials",
+    "aws/credentials/ec2rolecreds",
+    "aws/credentials/endpointcreds",
+    "aws/credentials/stscreds",
+    "aws/defaults",
+    "aws/ec2metadata",
+    "aws/endpoints",
+    "aws/request",
+    "aws/session",
+    "aws/signer/v4",
+    "internal/sdkrand",
+    "internal/shareddefaults",
+    "private/protocol",
+    "private/protocol/query",
+    "private/protocol/query/queryutil",
+    "private/protocol/rest",
+    "private/protocol/restxml",
+    "private/protocol/xml/xmlutil",
+    "service/s3",
+    "service/sts"
+  ]
+  revision = "63324a33d7e42a386c04d4daec764a3de243492e"
+  version = "v1.13.0"
 
 [[projects]]
   name = "github.com/go-ini/ini"
   packages = ["."]
-  revision = "2e44421e256d82ebbf3d4d4fcabe8930b905eff3"
+  revision = "32e4c1e6bc4e7d0d8451aa6b75200d19e37a536a"
+  version = "v1.32.0"
 
 [[projects]]
   branch = "master"
@@ -51,8 +80,7 @@
 [[projects]]
   name = "github.com/jmespath/go-jmespath"
   packages = ["."]
-  revision = "3433f3ea46d9f8019119e7dd41274e112a2359a9"
-  version = "0.2.2"
+  revision = "0b12d6b5"
 
 [[projects]]
   name = "github.com/kardianos/osext"
@@ -61,7 +89,10 @@
 
 [[projects]]
   name = "github.com/lib/pq"
-  packages = [".","oid"]
+  packages = [
+    ".",
+    "oid"
+  ]
   revision = "8ad2b298cadd691a77015666a5372eae5dbfac8f"
 
 [[projects]]
@@ -92,13 +123,20 @@
 
 [[projects]]
   name = "gopkg.in/Clever/kayvee-go.v3"
-  packages = [".","logger"]
+  packages = [
+    ".",
+    "logger"
+  ]
   revision = "d49feee080e8e32e01a5f415cf1f9dc264dfb043"
   version = "v3.0.0"
 
 [[projects]]
   name = "gopkg.in/Clever/kayvee-go.v6"
-  packages = [".","logger","router"]
+  packages = [
+    ".",
+    "logger",
+    "router"
+  ]
   revision = "fa278c9c7f83580b15c163c1efffe6fb4f2e3989"
   version = "v6.2.0"
 
@@ -110,6 +148,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "b8ff2258aec59f57c39ab3592a7429c37df8fad104ce8acce5cf654b120fe3da"
+  inputs-digest = "45b9a9fdaa3a45a09a06ff4ac5d27c815a2e813ce0831daa12d23983d2255db7"
   solver-name = "gps-cdcl"
   solver-version = 1

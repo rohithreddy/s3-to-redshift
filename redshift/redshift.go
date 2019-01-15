@@ -1,8 +1,8 @@
 package redshift
 
 import (
+	"context"
 	"database/sql"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -23,16 +23,16 @@ import (
 
 type dbExecCloser interface {
 	Close() error
-	Begin() (*sql.Tx, error)
-	Prepare(query string) (*sql.Stmt, error)
-	Exec(query string, args ...interface{}) (sql.Result, error)
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-	QueryRow(query string, args ...interface{}) *sql.Row
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
 }
 
 // Redshift wraps a dbExecCloser and can be used to perform operations on a redshift database.
+// We additionally give it a context for the duration of the job
 type Redshift struct {
 	dbExecCloser
+	ctx context.Context
 }
 
 // Table is our representation of a Redshift table
@@ -108,8 +108,7 @@ var (
 // NewRedshift returns a pointer to a new redshift object using configuration values passed in
 // on instantiation and the AWS env vars we assume exist
 // Don't need to pass s3 info unless doing a COPY operation
-func NewRedshift(host, port, db, user, password string, timeout int) (*Redshift, error) {
-	flag.Parse()
+func NewRedshift(ctx context.Context, host, port, db, user, password string, timeout int) (*Redshift, error) {
 	source := fmt.Sprintf("host=%s port=%s dbname=%s keepalive=1 connect_timeout=%d", host, port, db, timeout)
 	log.Println("Connecting to Redshift Source: ", source)
 	source += fmt.Sprintf(" user=%s password=%s", user, password)
@@ -117,7 +116,15 @@ func NewRedshift(host, port, db, user, password string, timeout int) (*Redshift,
 	if err != nil {
 		return nil, err
 	}
-	return &Redshift{sqldb}, nil
+	if err := sqldb.Ping(); err != nil {
+		return nil, err
+	}
+	return &Redshift{sqldb, ctx}, nil
+}
+
+// Begin wraps a new transaction in the databases context
+func (r *Redshift) Begin() (*sql.Tx, error) {
+	return r.dbExecCloser.BeginTx(r.ctx, nil)
 }
 
 // GetTableFromConf returns the redshift table representation of the s3 conf file
@@ -163,7 +170,7 @@ func (r *Redshift) GetTableMetadata(schema, tableName, dataDateCol string) (*Tab
 	// does the table exist?
 	var placeholder string
 	q := fmt.Sprintf(existQueryFormat, schema, tableName)
-	if err := r.QueryRow(q).Scan(&placeholder); err != nil {
+	if err := r.QueryRowContext(r.ctx, q).Scan(&placeholder); err != nil {
 		// If the table doesn't exist, log it, but don't return an
 		// error since this is not an application error.
 		// The correct behavior is to create a new table.
@@ -175,7 +182,7 @@ func (r *Redshift) GetTableMetadata(schema, tableName, dataDateCol string) (*Tab
 	}
 
 	// table exists, what are the columns?
-	rows, err := r.Query(fmt.Sprintf(schemaQueryFormat, schema, tableName))
+	rows, err := r.QueryContext(r.ctx, fmt.Sprintf(schemaQueryFormat, schema, tableName))
 	if err != nil {
 		return nil, nil, fmt.Errorf("issue running column query: %s, err: %s", schemaQueryFormat, err)
 	}
@@ -208,7 +215,7 @@ func (r *Redshift) GetTableMetadata(schema, tableName, dataDateCol string) (*Tab
 	lastDataQuery := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s" ORDER BY "%s" DESC LIMIT 1`,
 		dataDateCol, schema, tableName, dataDateCol)
 	var lastData time.Time
-	err = r.QueryRow(lastDataQuery).Scan(&lastData)
+	err = r.QueryRowContext(r.ctx, lastDataQuery).Scan(&lastData)
 	if err != nil && err == sql.ErrNoRows {
 		return &retTable, nil, nil
 	} else if err != nil {
@@ -259,13 +266,13 @@ func (r *Redshift) CreateTable(tx *sql.Tx, table Table) error {
 		return fmt.Errorf("both SORTKEY and DISTKEY should be specified in create table: %s. Either create your own table if you truly don't want those keys, or update the config to contain both", createSQL)
 	}
 
-	createStmt, err := tx.Prepare(createSQL)
+	createStmt, err := tx.PrepareContext(r.ctx, createSQL)
 	if err != nil {
 		return fmt.Errorf("issue preparing statement: %s", err)
 	}
 
 	log.Printf("Running command: %s with args: %v", createSQL, args)
-	_, err = createStmt.Exec()
+	_, err = createStmt.ExecContext(r.ctx)
 	return err
 }
 
@@ -281,13 +288,13 @@ func (r *Redshift) UpdateTable(tx *sql.Tx, inputTable, targetTable Table) error 
 
 	// postgres only allows adding one column at a time
 	for _, op := range columnOps {
-		alterStmt, err := tx.Prepare(op)
+		alterStmt, err := tx.PrepareContext(r.ctx, op)
 		if err != nil {
 			return fmt.Errorf("issue preparing statement: '%s' - err: %s", op, err)
 		}
 
 		log.Printf("Running command: %s", op)
-		_, err = alterStmt.Exec()
+		_, err = alterStmt.ExecContext(r.ctx)
 		if err != nil {
 			return fmt.Errorf("issue running statement %s: %s", op, err)
 		}
@@ -319,7 +326,7 @@ func checkColumnsAndOrdering(inputTable, targetTable Table) ([]string, error) {
 
 	for idx, inCol := range inputTable.Columns {
 		if len(targetTable.Columns) <= idx {
-			fmt.Printf("Missing column -- running alter table\n")
+			log.Printf("Missing column -- running alter table\n")
 			alterSQL := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN %s`, targetTable.Meta.Schema, targetTable.Name, getColumnSQL(inCol))
 			columnOps = append(columnOps, alterSQL)
 			continue
@@ -350,7 +357,7 @@ func checkColumnsWithoutOrdering(inputTable, targetTable Table) ([]string, error
 			}
 		}
 		if !foundMatching {
-			fmt.Printf("Missing column -- running alter table\n")
+			log.Printf("Missing column -- running alter table\n")
 			alterSQL := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN %s`,
 				targetTable.Meta.Schema, targetTable.Name, getColumnSQL(inCol))
 			columnOps = append(columnOps, alterSQL)
@@ -425,7 +432,7 @@ func (r *Redshift) Copy(tx *sql.Tx, f s3filepath.S3File, delimiter string, creds
 		f.Schema, f.Table, f.GetDataFilename(), gzipSQL, jsonSQL, jsonPathsSQL, f.Bucket.Region, manifestSQL, credSQL, delimSQL)
 	log.Printf("Running command: %s", copySQL)
 	// can't use prepare b/c of redshift-specific syntax that postgres does not like
-	_, err := tx.Exec(copySQL)
+	_, err := tx.ExecContext(r.ctx, copySQL)
 	return err
 }
 
@@ -434,11 +441,11 @@ func (r *Redshift) Copy(tx *sql.Tx, f s3filepath.S3File, delimiter string, creds
 func (r *Redshift) Truncate(tx *sql.Tx, schema, table string) error {
 	// We run 'DELETE FROM' instead of 'TRUNCATE' because 'TRUNCATE' can't be run in a transaction.
 	// See http://docs.aws.amazon.com/redshift/latest/dg/r_TRUNCATE.html.
-	truncStmt, err := tx.Prepare(fmt.Sprintf(`DELETE FROM "%s"."%s"`, schema, table))
+	truncStmt, err := tx.PrepareContext(r.ctx, fmt.Sprintf(`DELETE FROM "%s"."%s"`, schema, table))
 	if err != nil {
 		return err
 	}
-	_, err = truncStmt.Exec()
+	_, err = truncStmt.ExecContext(r.ctx)
 	return err
 }
 
@@ -452,12 +459,12 @@ func (r *Redshift) TruncateInTimeRange(tx *sql.Tx, schema, table, dataDateCol st
 		WHERE "%s" >= '%s' AND "%s" < '%s'
 		`, schema, table, dataDateCol, start.Format("2006-01-02 15:04:05"),
 		dataDateCol, end.Format("2006-01-02 15:04:05"))
-	truncStmt, err := tx.Prepare(truncSQL)
+	truncStmt, err := tx.PrepareContext(r.ctx, truncSQL)
 	if err != nil {
 		return err
 	}
 
 	log.Printf("Refreshing with the latest data. Running command: %s", truncSQL)
-	_, err = truncStmt.Exec()
+	_, err = truncStmt.ExecContext(r.ctx)
 	return err
 }
